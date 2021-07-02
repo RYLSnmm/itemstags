@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<title>itemstags</title>
+
+<button id="open-setting">設定</button>
+
+<div id="container">
+	<div id="contents"></div>
+</div>
+
+<div id="dialog">
+	<div id="dialog-front">
+		<section class="filter-setting">
+			<header>
+				<h1>Filter</h1>
+				<select id="filter-mode">
+					<option>AND</option>
+					<option>OR</option>
+				</select>
+			</header>
+			<tag-select></tag-select>
+		</section>
+		<template id="color-setting">
+			<section class="color-setting">
+				<header>
+					<h1>Color</h1>
+					<input class="color" />
+					<div class="color-preview"></div>
+					<button class="remove">✖</button>
+				</header>
+				<tag-select></tag-select>
+			</section>
+		</template>
+		<div class="btns">
+			<button id="add-color">＋ Color</button>
+			<button id="setting-apply">適用</button>
+		</div>
+	</div>
+</div>
+
+<style>
+	* {
+		box-sizing: border-box;
+	}
+
+	body {
+		font-size: 14px;
+		margin: 0;
+		background: #f8f8f8;
+	}
+
+	body,
+	select,
+	input,
+	button {
+		font-family: meiryo;
+	}
+
+	#open-setting {
+		padding: 2px 10px;
+		position: fixed;
+		top: 5px;
+		right: 5px;
+	}
+
+	#contents {
+		margin: 50px auto;
+		max-width: 800px;
+		width: 80%;
+	}
+
+	.item {
+		background: #fcfcfc;
+		border: 1px solid #ccc;
+		padding: 10px 15px;
+		display: flex;
+		align-items: flex-start;
+	}
+
+	.item+.item {
+		border-top: none;
+	}
+
+	.image {
+		flex: none;
+		width: 120px;
+		display: flex;
+	}
+
+	.image img {
+		margin: auto;
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+	}
+
+	.main {
+		flex: 1 0 0;
+		margin-left: 20px;
+	}
+
+	.title {
+		font-size: 14px;
+		border-bottom: 1px solid #aaa;
+		padding: 0 5px;
+		margin-bottom: 2px;
+	}
+
+	.tags {
+		display: flex;
+		flex-flow: row wrap;
+	}
+
+	.tag {
+		margin: 3px 6px 3px 0;
+		color: #fcfcfc;
+		background: #359cc3;
+		border-radius: 4px;
+		padding: 0 8px;
+		font-size: 11px;
+	}
+
+	.memos {
+		margin-top: 5px;
+		background: #f5f5f5;
+		padding: 0 5px;
+	}
+
+	.memo {
+		font-size: 12px;
+		padding: 2px 8px;
+		white-space: pre-wrap;
+	}
+
+	.memo+.memo {
+		border-top: 1px dotted #ccc;
+	}
+
+	#dialog {
+		display: none;
+	}
+
+	#dialog.open {
+		display: flex;
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		background: #fffe;
+	}
+
+	#dialog-front {
+		display: flex;
+		flex-flow: column;
+		margin: auto;
+		width: 60%;
+		max-height: 90%;
+		background: white;
+		border: 1px solid #ccc;
+		box-shadow: 0 1px 10px 3px #0002;
+		padding: 20px 40px;
+		overflow: auto;
+	}
+
+	#dialog-front header {
+		display: flex;
+		align-items: center;
+		margin-bottom: 10px;
+	}
+
+	#dialog-front h1 {
+		font-size: 24px;
+		margin: 0 auto 0 0;
+	}
+
+	#dialog-front #filter-mode {
+		font-size: 16px;
+		padding: 3px 5px;
+	}
+
+	#dialog-front .filter-setting,
+	#dialog-front .color-setting {
+		margin-bottom: 30px;
+	}
+
+	#dialog-front .color {
+		width: 150px;
+		padding: 3px 5px;
+		font-size: 14px;
+	}
+
+	#dialog-front .color-preview {
+		width: 30px;
+		align-self: stretch;
+		margin: 3px;
+		border: 1px solid #888;
+	}
+
+	#dialog-front .remove {
+		margin-left: 10px;
+	}
+
+	#dialog-front .btns {
+		display: flex;
+		flex-flow: row;
+		justify-content: flex-end;
+		gap: 10px;
+	}
+
+	#dialog-front .btns button {
+		padding: 2px 10px;
+	}
+</style>
+
+<script>
+	function $(sel, root) {
+		return (root || document).querySelector(sel)
+	}
+	function $$(sel, root) {
+		return [...(root || document).querySelectorAll(sel)]
+	}
+	function htmlesc(text) {
+		return text.replace(/[<>&"]/g, c => {
+			return {
+				"<": "&lt;",
+				">": "&gt;",
+				"&": "&amp;",
+				'"': "&quot;",
+			}[c]
+		})
+	}
+	function h(tpls, ...values) {
+		const s = v => {
+			if (v == null) return ""
+			if (v instanceof Object && "html" in v) {
+				if (v.html == null) return ""
+				return String(v.html)
+			}
+			return htmlesc(String(v))
+		}
+		return tpls.reduce((a, b) => a + s(values.shift()) + b)
+	}
+	function hf(...values) {
+		const t = document.createElement("template")
+		t.innerHTML = h(...values)
+		return t.content
+	}
+
+	window.setting = { filter: { condition: [] }, color: [] }
+	window.default_image = (() => {
+		const cvs = document.createElement("canvas")
+		cvs.width = 2
+		cvs.height = 1
+		const ctx = cvs.getContext("2d")
+		ctx.fillStyle = "#bbb"
+		ctx.fillRect(0, 0, cvs.width, cvs.height)
+		return cvs.toDataURL()
+	})()
+	window.data = function init({ prior_tags, default_image, items }) {
+		const tagset = new Set(prior_tags)
+		for (const item of items) {
+			for (const tag of item.tags) {
+				tagset.add(tag)
+			}
+		}
+		TagSelect.setTags([...tagset])
+		window.items = items
+		window.default_image = default_image ?? window.default_image
+		render()
+	}
+
+	function render() {
+		const { items, setting } = window
+		const elems = getRenderItems(items, setting).map(renderItem)
+		$("#contents").replaceChildren(...elems)
+	}
+	function getRenderItems(items, setting) {
+		const match = item => c => {
+			if (c.type === "in") {
+				return item.tags.includes(c.tag)
+			} else if (c.type === "out") {
+				return !item.tags.includes(c.tag)
+			}
+		}
+		if (setting.filter.condition.length) {
+			const { mode, condition } = setting.filter
+			items = items.filter(item => {
+				if (mode === "or") {
+					return condition.some(match(item))
+				} else {
+					return condition.every(match(item))
+				}
+			})
+		}
+		if (setting.color.length) {
+			items = items.map(item => {
+				let color = ""
+				// use last matched color
+				for (const color_setting of setting.color) {
+					if (color_setting.condition.every(match(item))) {
+						color = color_setting.color
+					}
+				}
+				return { ...item, color }
+			})
+		}
+		return items
+	}
+	function renderItem(item) {
+		const tags_html = item.tags?.map(tag => {
+			return h`<div class="tag">${tag}</div>`
+		}).join("\n")
+		const memos_html = item.memos?.map(memo => {
+			return h`<div class="memo">${memo}</div>`
+		}).join("\n")
+
+		return hf`
+			<div class="item" style="${item.color ? `background-color: ${item.color};` : ""}">
+				<div class="image">
+					<img src="${item.image || window.default_image}" />
+				</div>
+				<div class="main">
+					<div class="title">${item.title}</div>
+					<div class="tags">
+						${{ html: tags_html }}
+					</div>
+					<div class="memos">
+						${{ html: memos_html }}
+					</div>
+				</div>
+			</div>
+		`
+	}
+
+	$("#open-setting").onclick = () => {
+		$("#dialog").classList.add("open")
+	}
+	$("#add-color").onclick = () => {
+		const elem = document.getElementById("color-setting").content.cloneNode(true)
+		$(".btns").before(elem)
+	}
+	$("#dialog-front").onclick = (eve) => {
+		const remove = !!eve.target.closest(".color-setting .remove")
+		if (remove) {
+			eve.target.closest(".color-setting").remove()
+		}
+	}
+	$("#dialog-front").oninput = (eve) => {
+		const color_changed = !!eve.target.closest(".color-setting .color")
+		if (color_changed) {
+			const preview = eve.target.closest(".color-setting").querySelector(".color-preview")
+			preview.style.backgroundColor = eve.target.value
+		}
+	}
+	$("#setting-apply").onclick = () => {
+		window.setting = {
+			filter: {
+				mode: $("#filter-mode").value.toLowerCase(),
+				condition: $(".filter-setting tag-select").selected,
+			},
+			color: $$(".color-setting").map(c => {
+				return {
+					color: $(".color", c).value,
+					condition: $("tag-select", c).selected,
+				}
+			})
+		}
+		$("#dialog").classList.remove("open")
+		render()
+	}
+
+	class TagSelect extends HTMLElement {
+		static instances = new Set()
+		static tags = []
+
+		static setTags(tags) {
+			this.tags = tags
+			for (const instance of this.instances) {
+				instance.tags = []
+				instance.renderSelectedTags()
+				instance.renderAllTags()
+			}
+		}
+
+		_selected = new Map()
+
+		constructor() {
+			super()
+			this.attachShadow({ mode: "open" }).innerHTML = `
+				<style>
+					.container {
+						border: 1px solid #eee;
+					}
+					.selected {
+						min-height: 30px;
+						display: flex;
+						flex-flow: row wrap;
+						align-items: center;
+						padding: 5px 10px;
+					}
+					.selected .tag {
+						padding-right: 0px;
+					}
+					.selected .tag[data-type="in"] {
+						background: crimson;
+					}
+					.selected .tag[data-type="out"] {
+						background: cornflowerblue;
+					}
+					.selected .tag .remove {
+						border-radius: 4px;
+						margin-left: 3px;
+						display: inline-block;
+						padding: 0 3px;
+					}
+					.selected .tag .remove:hover {
+						background: #fff4;
+					}
+					.list {
+						border: 1px solid #ccc;
+						background: #eee;
+						display: flex;
+						flex-flow: row wrap;
+						align-items: center;
+						padding: 5px 10px;
+						margin: 8px;
+						border-radius: 5px;
+					}
+					.tag {
+						margin: 3px 6px 3px 0;
+						color: #fcfcfc;
+						background: #359cc3;
+						border-radius: 4px;
+						padding: 0 8px;
+						font-size: 11px;
+						cursor: pointer;
+						user-select: none;
+					}
+				</style>
+				<div class="container">
+					<div class="selected"></div>
+					<div class="list"></div>
+				</div>
+			`
+			this.shadowRoot.addEventListener("click", event => {
+				const tag_elem = event.target.closest(".tag")
+				if (!tag_elem) return
+				const key = tag_elem.title
+				if (event.target.closest(".remove")) {
+					this._selected.delete(key)
+				} else if (this._selected.has(key)) {
+					const type = this._selected.get(key) === "in" ? "out" : "in"
+					this._selected.set(key, type)
+				} else {
+					this._selected.set(key, "in")
+				}
+				this.renderSelectedTags()
+			})
+		}
+		connectedCallback() {
+			this.constructor.instances.add(this)
+			this.renderSelectedTags()
+			this.renderAllTags()
+		}
+		disconnectedCallback() {
+			this.constructor.instances.delete(this)
+		}
+		renderSelectedTags() {
+			const selected = [...this._selected.entries()]
+			const elems = selected.map(([tag, type]) => {
+				return hf`
+					<div class="tag" title="${tag}" data-type="${type}">
+						${tag}
+						<span class="remove">✖</span>
+					</div>
+				`
+			})
+			$(".selected", this.shadowRoot).replaceChildren(...elems)
+		}
+		renderAllTags() {
+			const tags = this.constructor.tags
+			const elems = tags.map(tag => {
+				return hf`
+					<div class="tag" title="${tag}">${tag}</div>
+				`
+			})
+			$(".list", this.shadowRoot).replaceChildren(...elems)
+		}
+		get selected() {
+			return [...this._selected].map(([tag, type]) => ({ tag, type }))
+		}
+	}
+	customElements.define("tag-select", TagSelect)
+</script>
+<script src="data.jsonp.js" defer></script>
